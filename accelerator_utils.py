@@ -8,6 +8,8 @@ import os
 import torch
 import logging
 
+# Configure logging
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Check available accelerators
@@ -252,8 +254,11 @@ def optimize_model_with_accelerators(model, attention_backend="auto"):
 
     # Set model to use memory efficient settings
     if hasattr(model, 'gradient_checkpointing_enable'):
-        model.gradient_checkpointing_enable()
-        logger.info("Enabled gradient checkpointing for memory efficiency")
+        try:
+            model.gradient_checkpointing_enable()
+            logger.info("Enabled gradient checkpointing for memory efficiency")
+        except Exception as e:
+            logger.debug(f"Gradient checkpointing not supported: {e}")
 
     return model
 

@@ -26,7 +26,15 @@ try:
     from data.data_utils import add_special_tokens, pil_img2rgb
     from data.transforms import ImageTransform
     from inferencer import InterleaveInferencer
-    from accelerator_utils import optimize_model_with_accelerators, ACCELERATORS_AVAILABLE
+    try:
+        from accelerator_utils import optimize_model_with_accelerators, ACCELERATORS_AVAILABLE
+    except ImportError as e:
+        print(f"Warning: Could not import accelerator utilities: {e}")
+        # Define fallback
+        ACCELERATORS_AVAILABLE = {}
+        def optimize_model_with_accelerators(model, attention_backend="native"):
+            print(f"Accelerator utilities not available, using native attention")
+            return model
     from modeling.autoencoder import load_ae
     from modeling.bagel import (
         BagelConfig,
@@ -545,12 +553,15 @@ class BagelModelLoader:
 
         # Add accelerator backend selection
         available_backends = ["native"]
-        if ACCELERATORS_AVAILABLE.get("flash_attn", False):
-            available_backends.append("flash")
-        if ACCELERATORS_AVAILABLE.get("xformers", False):
-            available_backends.append("xformers")
-        if ACCELERATORS_AVAILABLE.get("sageattention", False):
-            available_backends.append("sage")
+        try:
+            if ACCELERATORS_AVAILABLE.get("flash_attn", False):
+                available_backends.append("flash")
+            if ACCELERATORS_AVAILABLE.get("xformers", False):
+                available_backends.append("xformers")
+            if ACCELERATORS_AVAILABLE.get("sageattention", False):
+                available_backends.append("sage")
+        except:
+            pass  # If ACCELERATORS_AVAILABLE is not properly initialized
         available_backends.append("auto")  # Auto-select best
 
         inputs["required"]["attention_backend"] = (
