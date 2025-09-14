@@ -26,6 +26,7 @@ try:
     from data.data_utils import add_special_tokens, pil_img2rgb
     from data.transforms import ImageTransform
     from inferencer import InterleaveInferencer
+    from accelerator_utils import optimize_model_with_accelerators, ACCELERATORS_AVAILABLE
     from modeling.autoencoder import load_ae
     from modeling.bagel import (
         BagelConfig,
@@ -542,6 +543,24 @@ class BagelModelLoader:
             }
         }
 
+        # Add accelerator backend selection
+        available_backends = ["native"]
+        if ACCELERATORS_AVAILABLE.get("flash_attn", False):
+            available_backends.append("flash")
+        if ACCELERATORS_AVAILABLE.get("xformers", False):
+            available_backends.append("xformers")
+        if ACCELERATORS_AVAILABLE.get("sageattention", False):
+            available_backends.append("sage")
+        available_backends.append("auto")  # Auto-select best
+
+        inputs["required"]["attention_backend"] = (
+            available_backends,
+            {
+                "default": "auto",
+                "tooltip": "Select attention optimization backend (auto selects best available)",
+            },
+        )
+
         inputs["required"]["quantization_mode"] = (
             list(cls.QUANTIZATION_MODES.keys()),
             {
@@ -600,6 +619,7 @@ class BagelModelLoader:
         model_path: str,
         quantization_mode: str = "BF16",
         allow_auto_download: bool = False,
+        attention_backend: str = "auto",
     ) -> Tuple[Dict[str, Any]]:
         """
         Load BAGEL model with unified interface supporting both standard and DFloat11 models.
@@ -810,6 +830,11 @@ class BagelModelLoader:
                     force_hooks=True,
                 )
                 model = model.eval()
+
+                # Apply accelerator optimizations
+                print(f"Applying {attention_backend} attention optimization...")
+                model = optimize_model_with_accelerators(model, attention_backend=attention_backend)
+
                 inferencer = InterleaveInferencer(
                     model=model,
                     vae_model=vae_model,
@@ -832,8 +857,9 @@ class BagelModelLoader:
                     "is_echo4o": is_echo4o_model,
                     "model_type": "DFloat11" if is_df11_model else ("Echo-4o" if is_echo4o_model else "BAGEL"),
                     "device": "cuda" if torch.cuda.is_available() else "cpu",
+                    "attention_backend": attention_backend,
                 }
-                print(f"Successfully loaded BAGEL DF11 model from {local_model_dir}")
+                print(f"Successfully loaded BAGEL DF11 model from {local_model_dir} with {attention_backend} attention")
                 return (model_dict,)
             elif not is_df11_model:
                 # Create BAGEL configuration
@@ -942,6 +968,10 @@ class BagelModelLoader:
                         force_hooks=True,
                     ).eval()
 
+                    # Apply accelerator optimizations for standard mode
+                    print(f"Applying {attention_backend} attention optimization...")
+                    model = optimize_model_with_accelerators(model, attention_backend=attention_backend)
+
                 elif quantization_mode == "NF4":
                     print("Loading model with NF4 (4-bit) quantization...")
                     bnb_quantization_config = BnbQuantizationConfig(
@@ -989,6 +1019,11 @@ class BagelModelLoader:
                         f"Unsupported quantization mode: {quantization_mode}"
                     )
 
+                # Apply accelerator optimizations for quantized models (NF4, INT8, FP8)
+                if quantization_mode in ["NF4", "INT8", "FP8"]:
+                    print(f"Applying {attention_backend} attention optimization to quantized model...")
+                    model = optimize_model_with_accelerators(model, attention_backend=attention_backend)
+
                 # Create inferencer
                 inferencer = InterleaveInferencer(
                     model=model,
@@ -1015,6 +1050,7 @@ class BagelModelLoader:
                     "is_echo4o": is_echo4o_model,
                     "model_type": "Echo-4o" if is_echo4o_model else "BAGEL",
                     "device": "cuda" if torch.cuda.is_available() else "cpu",
+                    "attention_backend": attention_backend,
                 }
 
                 model_type_display = "Echo-4o" if is_echo4o_model else "BAGEL"
