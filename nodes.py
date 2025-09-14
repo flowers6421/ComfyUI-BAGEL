@@ -56,57 +56,6 @@ folder_names_and_paths["bagel"] = (
 )
 
 
-def create_default_config_files(model_dir: str):
-    """Create default config files for BAGEL-RecA model if they don't exist."""
-    import json
-
-    # Default BAGEL-RecA configurations
-    llm_config = {
-        "architectures": ["Qwen2ForCausalLM"],
-        "attention_dropout": 0.0,
-        "hidden_act": "silu",
-        "hidden_size": 3584,
-        "initializer_range": 0.02,
-        "intermediate_size": 18944,
-        "max_position_embeddings": 32768,
-        "max_window_layers": 28,
-        "model_type": "qwen2",
-        "num_attention_heads": 28,
-        "num_hidden_layers": 28,
-        "num_key_value_heads": 4,
-        "rms_norm_eps": 1e-06,
-        "rope_theta": 1000000.0,
-        "sliding_window": 32768,
-        "tie_word_embeddings": False,
-        "use_sliding_window": False,
-        "vocab_size": 152064
-    }
-
-    vit_config = {
-        "architectures": ["SiglipVisionModel"],
-        "hidden_size": 1152,
-        "image_size": 448,
-        "intermediate_size": 4304,
-        "model_type": "siglip_vision_model",
-        "num_attention_heads": 16,
-        "num_hidden_layers": 27,
-        "patch_size": 14
-    }
-
-    # Write configs if they don't exist
-    llm_config_path = os.path.join(model_dir, "llm_config.json")
-    vit_config_path = os.path.join(model_dir, "vit_config.json")
-
-    if not os.path.exists(llm_config_path):
-        with open(llm_config_path, "w") as f:
-            json.dump(llm_config, f, indent=2)
-        print(f"Created default llm_config.json in {model_dir}")
-
-    if not os.path.exists(vit_config_path):
-        with open(vit_config_path, "w") as f:
-            json.dump(vit_config, f, indent=2)
-        print(f"Created default vit_config.json in {model_dir}")
-
 
 def discover_bagel_model_dirs() -> Dict[str, str]:
     """Discover local BAGEL model directories under the configured models/bagel folder.
@@ -121,8 +70,6 @@ def discover_bagel_model_dirs() -> Dict[str, str]:
     # Check for BAGEL-RecA in diffusion_models if model_bf16.safetensors exists
     if os.path.exists(os.path.join(diffusion_models_dir, "model_bf16.safetensors")):
         discovered["BAGEL-RecA (diffusion_models)"] = diffusion_models_dir
-        # Create config files if they don't exist (for diffusion_models compatibility)
-        create_default_config_files(diffusion_models_dir)
 
     try:
         if os.path.exists(base_repo_dir):
