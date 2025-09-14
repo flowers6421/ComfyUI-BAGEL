@@ -79,7 +79,7 @@ def create_default_config_files(model_dir: str):
         "sliding_window": 32768,
         "tie_word_embeddings": False,
         "use_sliding_window": False,
-        "vocab_size": 151936
+        "vocab_size": 152064
     }
 
     vit_config = {
