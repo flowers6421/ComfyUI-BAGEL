@@ -49,20 +49,81 @@ except ImportError:
     )
     DFloat11Model = None
 
-# Register the BAGEL model folder
+# Register the BAGEL model folder and diffusion_models as fallback
 folder_names_and_paths["bagel"] = (
-    [os.path.join(comfy_models_dir, "bagel")],
+    [os.path.join(comfy_models_dir, "bagel"), os.path.join(comfy_models_dir, "diffusion_models")],
     [".json", ".safetensors"],
 )
 
 
+def create_default_config_files(model_dir: str):
+    """Create default config files for BAGEL-RecA model if they don't exist."""
+    import json
+
+    # Default BAGEL-RecA configurations
+    llm_config = {
+        "architectures": ["Qwen2ForCausalLM"],
+        "attention_dropout": 0.0,
+        "hidden_act": "silu",
+        "hidden_size": 3584,
+        "initializer_range": 0.02,
+        "intermediate_size": 18944,
+        "max_position_embeddings": 32768,
+        "max_window_layers": 28,
+        "model_type": "qwen2",
+        "num_attention_heads": 28,
+        "num_hidden_layers": 28,
+        "num_key_value_heads": 4,
+        "rms_norm_eps": 1e-06,
+        "rope_theta": 1000000.0,
+        "sliding_window": 32768,
+        "tie_word_embeddings": False,
+        "use_sliding_window": False,
+        "vocab_size": 151936
+    }
+
+    vit_config = {
+        "architectures": ["SiglipVisionModel"],
+        "hidden_size": 1152,
+        "image_size": 448,
+        "intermediate_size": 4304,
+        "model_type": "siglip_vision_model",
+        "num_attention_heads": 16,
+        "num_hidden_layers": 27,
+        "patch_size": 14
+    }
+
+    # Write configs if they don't exist
+    llm_config_path = os.path.join(model_dir, "llm_config.json")
+    vit_config_path = os.path.join(model_dir, "vit_config.json")
+
+    if not os.path.exists(llm_config_path):
+        with open(llm_config_path, "w") as f:
+            json.dump(llm_config, f, indent=2)
+        print(f"Created default llm_config.json in {model_dir}")
+
+    if not os.path.exists(vit_config_path):
+        with open(vit_config_path, "w") as f:
+            json.dump(vit_config, f, indent=2)
+        print(f"Created default vit_config.json in {model_dir}")
+
+
 def discover_bagel_model_dirs() -> Dict[str, str]:
     """Discover local BAGEL model directories under the configured models/bagel folder.
+    Also checks diffusion_models folder for model_bf16.safetensors.
 
     Returns a mapping from folder-name -> absolute-path.
     """
     base_repo_dir = os.path.join(comfy_models_dir, "bagel")
+    diffusion_models_dir = os.path.join(comfy_models_dir, "diffusion_models")
     discovered: Dict[str, str] = {}
+
+    # Check for BAGEL-RecA in diffusion_models if model_bf16.safetensors exists
+    if os.path.exists(os.path.join(diffusion_models_dir, "model_bf16.safetensors")):
+        discovered["BAGEL-RecA (diffusion_models)"] = diffusion_models_dir
+        # Create config files if they don't exist (for diffusion_models compatibility)
+        create_default_config_files(diffusion_models_dir)
+
     try:
         if os.path.exists(base_repo_dir):
             for name in sorted(os.listdir(base_repo_dir)):
@@ -407,10 +468,15 @@ def check_model_files(model_path: str, is_df11_model: bool) -> bool:
     ]
 
     # DFloat11 models do not have ema.safetensors in their root.
-    # Standard models expect ema.safetensors.
+    # Standard models expect ema.safetensors or model_bf16.safetensors.
     # VAE presence is checked more robustly during the loading process itself.
     if not is_df11_model:
-        required_files.append("ema.safetensors")
+        # Check if either ema.safetensors or model_bf16.safetensors exists
+        has_ema = os.path.exists(os.path.join(model_path, "ema.safetensors"))
+        has_model_bf16 = os.path.exists(os.path.join(model_path, "model_bf16.safetensors"))
+        if not (has_ema or has_model_bf16):
+            print(f"Missing required model file: neither ema.safetensors nor model_bf16.safetensors found in {model_path}")
+            return False
 
     for file_name in required_files:
         if not os.path.exists(os.path.join(model_path, file_name)):
@@ -905,7 +971,16 @@ class BagelModelLoader:
                             device_map[k] = first_device
 
                 # Load model based on quantization mode
-                checkpoint_path = os.path.join(local_model_dir, "ema.safetensors")
+                # Check for both ema.safetensors and model_bf16.safetensors
+                ema_path = os.path.join(local_model_dir, "ema.safetensors")
+                model_bf16_path = os.path.join(local_model_dir, "model_bf16.safetensors")
+
+                if os.path.exists(ema_path):
+                    checkpoint_path = ema_path
+                elif os.path.exists(model_bf16_path):
+                    checkpoint_path = model_bf16_path
+                else:
+                    raise FileNotFoundError(f"No model checkpoint found (tried ema.safetensors and model_bf16.safetensors)")
 
                 if quantization_mode == "BF16":
                     # Standard loading
